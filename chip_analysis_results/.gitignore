@@ -1,0 +1,9 @@
+# 首先忽略所有文件
+*
+# 然后只跟踪.py和.md文件
+!*.py
+!*.md
+# 再忽略__pycache__文件夹
+__pycache__/
+# 确保.gitignore自己也被跟踪
+!.gitignore
