@@ -34,8 +34,9 @@ class NGSOligoAnalysisWorkflow:
         self.output_dir = None
         self.config_data = None
         self.analysis_results = []
+        self.config_path = None
     
-    def scan_directory(self, directory_path):
+    def scan_directory(self, directory_path, auto_continue=False):
         """扫描目录获取可分析文件，生成简单的配置文本文件"""
         if not os.path.exists(directory_path):
             print(f"错误: 目录不存在 - {directory_path}")
@@ -64,13 +65,14 @@ class NGSOligoAnalysisWorkflow:
         
         # 生成配置文本文件
         config_txt_path = os.path.join(self.output_dir, "analysis_config.txt")
+        self.config_path = config_txt_path
         
         with open(config_txt_path, 'w', encoding='utf-8') as f:
             f.write("# NGS Oligopool测序分析配置文件\n")
             f.write("# 格式: NGS测序文件的绝对路径 [Tab] 芯片打印序列文件的绝对路径 [Tab] 芯片类型(small或large)\n")
             f.write("# 请在每行的NGS文件路径后添加Tab键和对应的芯片打印序列文件路径，再添加Tab键和芯片类型\n")
             f.write("# 芯片类型: small(540x635)或large(1080x636)\n")
-            f.write("# 保存文件后，程序将自动开始分析\n\n")
+            f.write("# 保存文件后，关闭文本编辑器，返回命令行窗口继续\n\n")
             
             for ngs_file in ngs_files:
                 # 默认值: [NGS文件路径] [Tab] [留空供用户填写] [Tab] small
@@ -90,15 +92,53 @@ class NGSOligoAnalysisWorkflow:
             print("\n请在打开的文本文件中：")
             print("1. 在每行的NGS文件路径后添加Tab键和对应的芯片打印序列文件绝对路径")
             print("2. 根据需要修改芯片类型(small或large)")
-            print("3. 保存文件")
-            print("\n配置完成后，请运行以下命令开始分析:")
-            print(f"python {os.path.basename(__file__)} --config {config_txt_path}")
+            print("3. 保存文件并关闭编辑器")
+            
+            if auto_continue:
+                print("\n准备继续分析...")
+                print("请编辑完配置文件，保存并关闭，然后在此窗口输入 'go' 继续:")
+                
+                while True:
+                    user_input = input("> ").strip().lower()
+                    if user_input == 'go':
+                        print("继续执行分析...")
+                        if self.load_config(config_txt_path):
+                            self.run_analysis()
+                        break
+                    elif user_input == 'exit' or user_input == 'quit':
+                        print("用户退出分析")
+                        break
+                    else:
+                        print("请输入 'go' 继续分析或 'exit' 退出:")
+            else:
+                print("\n配置完成后，请运行以下命令开始分析:")
+                print(f"python {os.path.basename(__file__)} --config {config_txt_path}")
             
             return True
             
         except Exception as e:
             print(f"无法自动打开配置文件: {e}")
             print(f"请手动打开并编辑配置文件: {config_txt_path}")
+            
+            if auto_continue:
+                print("\n请编辑完配置文件后，在此窗口输入 'go' 继续:")
+                
+                while True:
+                    user_input = input("> ").strip().lower()
+                    if user_input == 'go':
+                        print("继续执行分析...")
+                        if self.load_config(config_txt_path):
+                            self.run_analysis()
+                        break
+                    elif user_input == 'exit' or user_input == 'quit':
+                        print("用户退出分析")
+                        break
+                    else:
+                        print("请输入 'go' 继续分析或 'exit' 退出:")
+            else:
+                print("\n配置完成后，请运行以下命令开始分析:")
+                print(f"python {os.path.basename(__file__)} --config {config_txt_path}")
+                
             return True
     
     def load_config(self, config_file):
@@ -425,6 +465,12 @@ def main():
     scan_parser = subparsers.add_parser('scan', help='扫描目录并创建配置文件')
     scan_parser.add_argument('input_dir', nargs='?', help='输入目录路径，包含测序结果文件')
     scan_parser.add_argument('--output_dir', '-o', help='输出目录路径 (默认为input_dir/results)')
+    scan_parser.add_argument('--auto', '-a', action='store_true', help='自动模式：等待用户编辑完配置后继续分析')
+    
+    # 一站式分析命令
+    oneshot_parser = subparsers.add_parser('oneshot', help='一站式分析：扫描目录，等待用户编辑配置后自动分析')
+    oneshot_parser.add_argument('input_dir', nargs='?', help='输入目录路径，包含测序结果文件')
+    oneshot_parser.add_argument('--output_dir', '-o', help='输出目录路径 (默认为input_dir/results)')
     
     # 分析命令
     analyze_parser = subparsers.add_parser('analyze', help='使用配置文件执行分析')
@@ -433,6 +479,7 @@ def main():
     # 配置参数
     parser.add_argument('--config', '-c', help='分析配置文件路径')
     parser.add_argument('--gui', '-g', action='store_true', help='使用图形界面选择目录')
+    parser.add_argument('--auto', '-a', action='store_true', help='自动模式：等待用户编辑完配置后继续分析')
     parser.add_argument('input_dir', nargs='?', help='输入目录路径 (如果不使用配置文件)')
     
     args = parser.parse_args()
@@ -455,14 +502,33 @@ def main():
                 return
         
         output_dir = args.output_dir
-        workflow.scan_directory(input_dir)
+        workflow.scan_directory(input_dir, auto_continue=args.auto)
+    
+    elif args.command == 'oneshot':
+        # 一站式分析：扫描目录，等待用户编辑后自动分析
+        input_dir = args.input_dir
+        if not input_dir:
+            print("打开文件夹选择对话框...")
+            root = tk.Tk()
+            root.withdraw()  # 隐藏主窗口
+            input_dir = filedialog.askdirectory(title="选择包含测序结果的目录")
+            root.destroy()
+            if not input_dir:
+                print("未选择目录，退出程序")
+                return
+        
+        output_dir = args.output_dir
+        workflow.scan_directory(input_dir, auto_continue=True)
+    
     elif args.command == 'analyze' or args.config:
         config_file = args.config
         if workflow.load_config(config_file):
             workflow.run_analysis()
+    
     elif args.input_dir:
         # 使用命令行指定的目录
-        workflow.scan_directory(args.input_dir)
+        workflow.scan_directory(args.input_dir, auto_continue=args.auto)
+    
     else:
         # 默认行为：弹窗选择目录
         print("打开文件夹选择对话框...")
@@ -472,7 +538,7 @@ def main():
         root.destroy()
         if input_dir:
             print(f"已选择目录: {input_dir}")
-            workflow.scan_directory(input_dir)
+            workflow.scan_directory(input_dir, auto_continue=args.auto)
         else:
             print("未选择目录，退出程序")
             parser.print_help()
