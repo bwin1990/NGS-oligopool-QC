@@ -25,380 +25,6 @@ except ImportError:
     print("警告: 无法导入分析模块。请确保 analyze_oligo_ngs.py 和 chip_depth_heatmap.py 文件在当前目录中。")
     print("程序将继续运行，但某些功能可能不可用。")
 
-# 用于创建一个独立的文件选择进程
-FILE_SELECTOR_SCRIPT = """
-import os
-import sys
-import tkinter as tk
-from tkinter import filedialog
-
-# 创建一个独立的文件选择对话框
-def select_file():
-    # 创建根窗口但不显示
-    root = tk.Tk()
-    root.withdraw()
-    
-    # 打开文件选择对话框
-    file_path = filedialog.askopenfilename(
-        title="选择芯片合成文件",
-        filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")]
-    )
-    
-    # 销毁根窗口
-    root.destroy()
-    
-    return file_path
-
-if __name__ == "__main__":
-    temp_file = sys.argv[1]
-    
-    # 获取文件路径
-    file_path = select_file()
-    
-    # 将文件路径写入临时文件
-    with open(temp_file, 'w', encoding='utf-8') as f:
-        f.write(file_path)
-"""
-
-# 创建独立的文件选择器脚本
-def create_file_selector_script():
-    script_path = os.path.join(tempfile.gettempdir(), "file_selector.py")
-    with open(script_path, 'w', encoding='utf-8') as f:
-        f.write(FILE_SELECTOR_SCRIPT)
-    return script_path
-
-# 创建分析UI HTML页面
-def create_analysis_ui(input_dir, output_dir=None):
-    """创建分析用户界面HTML文件"""
-    if output_dir is None:
-        output_dir = os.path.join(input_dir, "results")
-    
-    # 确保输出目录存在
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # 查找目录中的所有90.oligostat.xls文件
-    ngs_files = []
-    for ext in ['*90.oligostat.xls', '*90.oligostat.xlsx']:
-        ngs_files.extend(glob.glob(os.path.join(input_dir, ext)))
-    
-    # 按修改时间排序
-    ngs_files.sort(key=os.path.getmtime, reverse=True)
-    
-    if not ngs_files:
-        print(f"在目录 {input_dir} 中未找到任何 *90.oligostat.xls 文件")
-        return None
-    
-    print(f"找到 {len(ngs_files)} 个测序结果文件")
-    
-    # 创建文件选择器脚本
-    file_selector = create_file_selector_script()
-    print(f"文件选择器脚本已创建: {file_selector}")
-    
-    # 生成HTML
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    html_content = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NGS Oligopool分析工作流</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; }}
-        .container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
-        h1, h2, h3 {{ color: #2c3e50; }}
-        .file-item {{ border-left: 4px solid #3498db; }}
-        .footer {{ margin-top: 30px; text-align: center; font-size: 0.8em; color: #7f8c8d; }}
-        #status-area {{ display: none; max-height: 300px; overflow-y: auto; }}
-        .btn-outline-secondary:hover {{ background-color: #e9ecef; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header class="my-4">
-            <h1 class="text-center">NGS Oligopool测序分析工作流</h1>
-            <p class="text-center text-muted">扫描目录: {input_dir} | 生成时间: {now}</p>
-            <hr>
-        </header>
-
-        <section id="file-list">
-            <h2>检测到的文件 <small class="text-muted">({len(ngs_files)}个文件)</small></h2>
-            <p>请为每个测序文件指定对应的芯片合成文件路径，并选择芯片类型。点击"浏览"按钮可以打开文件选择对话框。</p>
-            
-            <form id="analysis-form" action="javascript:void(0);">
-                <input type="hidden" name="input_dir" value="{input_dir}">
-                <input type="hidden" name="output_dir" value="{output_dir}">
-                
-                """
-    
-    # 添加文件条目
-    for i, ngs_file in enumerate(ngs_files):
-        file_name = os.path.basename(ngs_file)
-        html_content += f"""
-            <div class="file-item card mb-3">
-                <div class="card-body">
-                    <h5 class="card-title"><span class="text-primary">{i+1}.</span> {file_name}</h5>
-                    <p class="card-text text-muted">{file_name}</p>
-                    <div class="row mb-2">
-                        <div class="col-md-6">
-                            <label class="form-label">芯片合成文件路径:</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control chip-file" name="chip_file_{i}" id="chip_file_{i}" placeholder="选择对应的芯片合成文件...">
-                                <button class="btn btn-outline-secondary browse-btn" type="button" data-index="{i}">浏览...</button>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">芯片类型:</label>
-                            <select class="form-select chip-type" name="chip_type_{i}">
-                                <option value="small" selected>小片(540x635)</option>
-                                <option value="large">大片(1080x636)</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">添加到分析:</label>
-                            <div class="form-check mt-2">
-                                <input class="form-check-input file-select" type="checkbox" name="select_{i}" checked>
-                                <label class="form-check-label">选择此文件</label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            """
-    
-    # 添加提交按钮和剩余的HTML
-    html_content += f"""
-                <div class="d-grid gap-2 col-md-6 mx-auto mt-4">
-                    <button type="button" id="start-analysis" class="btn btn-primary btn-lg">开始分析</button>
-                </div>
-            </form>
-        </section>
-        
-        <section id="status-area" class="my-4">
-            <h3>分析状态</h3>
-            <div class="progress mb-3">
-                <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
-            </div>
-            <div class="card">
-                <div class="card-body">
-                    <pre id="status-log" class="mb-0"></pre>
-                </div>
-            </div>
-        </section>
-        
-        <section id="results-section" class="my-4" style="display: none;">
-            <h3>分析结果</h3>
-            <div id="results-list" class="list-group">
-                <!-- 结果将在这里动态添加 -->
-            </div>
-        </section>
-        
-        <footer class="footer">
-            <p>NGS Oligopool测序分析工作流 | 生成时间: {now}</p>
-        </footer>
-    </div>
-    
-    <script>
-        // 文件选择脚本路径
-        const fileSelector = "{file_selector.replace('\\\\', '\\\\\\\\')}";
-        
-        // 浏览按钮点击事件处理
-        document.addEventListener('DOMContentLoaded', function() {{
-            // 调试信息
-            console.log("页面加载完成，初始化事件处理...");
-            
-            // 为所有浏览按钮添加点击事件
-            document.querySelectorAll('.browse-btn').forEach(button => {{
-                button.addEventListener('click', function() {{
-                    const index = this.getAttribute('data-index');
-                    const inputField = document.getElementById(`chip_file_${{index}}`);
-                    
-                    // 显示正在选择文件的状态
-                    this.disabled = true;
-                    this.textContent = "选择中...";
-                    inputField.placeholder = "正在打开文件选择对话框...";
-                    
-                    // 创建一个唯一的标识符，用于临时文件
-                    const tempId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
-                    
-                    // 创建嵌入式iframe来调用系统的文件选择对话框
-                    // 这里我们使用一个iframe来提交表单，模拟调用外部程序
-                    const formHtml = `
-                    <form id="fileForm_${{tempId}}" action="app://select-file/" method="GET" target="_blank">
-                        <input type="hidden" name="id" value="${{tempId}}">
-                        <input type="hidden" name="script" value="${{fileSelector}}">
-                    </form>
-                    `;
-                    
-                    const container = document.createElement('div');
-                    container.style.display = 'none';
-                    container.innerHTML = formHtml;
-                    document.body.appendChild(container);
-                    
-                    // 提交表单
-                    setTimeout(() => {{
-                        // 重置按钮状态
-                        this.disabled = false;
-                        this.textContent = "浏览...";
-                        inputField.placeholder = "选择对应的芯片合成文件...";
-                        
-                        // 提示用户手动输入
-                        alert("请手动运行文件选择程序:\\n" + 
-                              "1. 按下Ctrl+C终止当前程序\\n" +
-                              "2. 重新运行以下命令选择文件:\\n" +
-                              `   python "${{fileSelector}}" "temp_file_${{index}}.txt"\\n` +
-                              "3. 然后将选择的文件路径复制到此输入框中");
-                    }}, 1000);
-                }});
-            }});
-            
-            // 开始分析按钮点击事件
-            const startButton = document.getElementById('start-analysis');
-            console.log("找到开始分析按钮:", startButton ? "是" : "否");
-            
-            startButton.addEventListener('click', function(event) {{
-                console.log("开始分析按钮被点击");
-                event.preventDefault(); // 阻止默认行为
-                
-                try {{
-                    // 显示加载状态
-                    startButton.disabled = true;
-                    startButton.textContent = "处理中...";
-                    
-                    // 显示状态区域
-                    document.getElementById('status-area').style.display = 'block';
-                    const statusLog = document.getElementById('status-log');
-                    statusLog.textContent = '正在收集分析配置...\\n';
-                    
-                    // 收集表单数据
-                    const form = document.getElementById('analysis-form');
-                    const formData = new FormData(form);
-                    const analysisData = {{}};
-                    
-                    analysisData.input_dir = formData.get('input_dir');
-                    analysisData.output_dir = formData.get('output_dir');
-                    analysisData.files = [];
-                    
-                    statusLog.textContent += '读取目录信息完成\\n';
-                    
-                    // 收集文件配置
-                    const fileCount = {len(ngs_files)};
-                    statusLog.textContent += `处理 ${{fileCount}} 个文件的配置...\\n`;
-                    
-                    // 文件路径数组
-                    const ngsFiles = [
-                        {", ".join([f"'{ngs_file.replace('\\', '\\\\')}'" for ngs_file in ngs_files])}
-                    ];
-                    
-                    for (let i = 0; i < fileCount; i++) {{
-                        if (formData.get(`select_${{i}}`) === "on") {{
-                            const ngsFile = ngsFiles[i];
-                            const chipFile = formData.get(`chip_file_${{i}}`);
-                            const chipType = formData.get(`chip_type_${{i}}`);
-                            
-                            analysisData.files.push({{
-                                ngs_file: ngsFile,
-                                chip_file: chipFile,
-                                chip_type: chipType
-                            }});
-                            
-                            statusLog.textContent += `  文件 ${{i+1}}: ${{chipType}} 芯片类型\\n`;
-                        }}
-                    }}
-                    
-                    statusLog.textContent += '配置数据收集完成\\n';
-                    
-                    // 生成JSON配置
-                    const configJson = JSON.stringify(analysisData, null, 2);
-                    statusLog.textContent += '生成JSON配置完成\\n';
-                    
-                    // 方法1: 尝试使用下载链接保存文件
-                    try {{
-                        const configElement = document.createElement('a');
-                        configElement.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(configJson));
-                        configElement.setAttribute('download', 'analysis_config.json');
-                        configElement.style.display = 'none';
-                        document.body.appendChild(configElement);
-                        
-                        statusLog.textContent += '正在尝试通过浏览器下载配置文件...\\n';
-                        configElement.click();
-                        document.body.removeChild(configElement);
-                        
-                        statusLog.textContent += '配置文件应已下载\\n';
-                    }} catch (downloadError) {{
-                        statusLog.textContent += `浏览器下载方法失败: ${{downloadError.message}}\\n`;
-                        statusLog.textContent += '尝试备用方法...\\n';
-                    }}
-                    
-                    // 方法2: 在页面上显示配置供复制
-                    statusLog.textContent += '将配置显示在页面上以便手动复制保存...\\n';
-                    
-                    // 创建配置文本区
-                    const configArea = document.createElement('div');
-                    configArea.className = 'mt-4';
-                    configArea.innerHTML = `
-                    <div class="card">
-                        <div class="card-header bg-warning">
-                            <h5 class="mb-0">配置数据 - 请复制并保存为 analysis_config.json</h5>
-                        </div>
-                        <div class="card-body">
-                            <button class="btn btn-sm btn-primary mb-2" id="copy-config">复制配置</button>
-                            <pre style="max-height: 300px; overflow: auto; background: #f8f9fa; padding: 10px; border-radius: 5px;">${{configJson}}</pre>
-                        </div>
-                    </div>
-                    `;
-                    
-                    const statusArea = document.getElementById('status-area');
-                    statusArea.appendChild(configArea);
-                    
-                    // 添加复制按钮功能
-                    document.getElementById('copy-config').addEventListener('click', function() {{
-                        navigator.clipboard.writeText(configJson).then(function() {{
-                            this.textContent = '复制成功!';
-                            setTimeout(() => {{ this.textContent = '复制配置'; }}, 2000);
-                        }}.bind(this)).catch(function(err) {{
-                            alert('复制失败: ' + err);
-                        }});
-                    }});
-                    
-                    // 恢复按钮状态
-                    setTimeout(() => {{
-                        startButton.disabled = false;
-                        startButton.textContent = "开始分析";
-                    }}, 2000);
-                    
-                    // 提醒用户如何继续
-                    statusLog.textContent += '\\n配置已保存，请运行分析脚本。\\n';
-                    statusLog.textContent += '执行命令: python ngs_oligo_analysis_workflow.py --config analysis_config.json\\n';
-                    
-                    alert('配置已保存 (或显示在页面上供复制)。\\n\\n请将该文件放在与分析脚本相同的目录，然后在命令行中运行:\\npython ngs_oligo_analysis_workflow.py --config analysis_config.json');
-                }} catch (error) {{
-                    console.error("处理配置时出错:", error);
-                    alert(`处理配置时出错: ${{error.message || error}}\\n请检查控制台获取更多信息`);
-                    
-                    // 恢复按钮状态
-                    startButton.disabled = false;
-                    startButton.textContent = "开始分析";
-                    
-                    // 显示错误信息
-                    const statusLog = document.getElementById('status-log');
-                    statusLog.textContent += `\\n错误: ${{error.message || error}}\\n`;
-                    statusLog.textContent += '请尝试手动创建配置文件，或联系开发人员获取帮助。\\n';
-                }}
-            }});
-        }});
-    </script>
-</body>
-</html>
-"""
-    
-    # 保存HTML文件
-    html_path = os.path.join(output_dir, "analysis_ui.html")
-    with open(html_path, 'w', encoding='utf-8') as f:
-        f.write(html_content)
-    
-    return html_path
-
 class NGSOligoAnalysisWorkflow:
     """NGS Oligopool分析工作流"""
     
@@ -410,7 +36,7 @@ class NGSOligoAnalysisWorkflow:
         self.analysis_results = []
     
     def scan_directory(self, directory_path):
-        """扫描目录获取可分析文件"""
+        """扫描目录获取可分析文件，生成简单的配置文本文件"""
         if not os.path.exists(directory_path):
             print(f"错误: 目录不存在 - {directory_path}")
             return False
@@ -422,49 +48,132 @@ class NGSOligoAnalysisWorkflow:
         # 创建输出目录
         os.makedirs(self.output_dir, exist_ok=True)
         
-        # 创建Web界面
-        html_path = create_analysis_ui(self.input_dir, self.output_dir)
+        # 查找目录中的所有90.oligostat.xls文件
+        ngs_files = []
+        for ext in ['*90.oligostat.xls', '*90.oligostat.xlsx']:
+            ngs_files.extend(glob.glob(os.path.join(directory_path, ext)))
         
-        if html_path:
-            print(f"分析界面已创建: {html_path}")
-            # 打开浏览器显示界面
-            try:
-                webbrowser.open(f"file://{html_path}")
-                print("已在浏览器中打开分析界面")
-            except Exception as e:
-                print(f"无法打开浏览器: {e}")
-                print(f"请手动打开文件: {html_path}")
+        # 按修改时间排序
+        ngs_files.sort(key=os.path.getmtime, reverse=True)
+        
+        if not ngs_files:
+            print(f"在目录 {directory_path} 中未找到任何 *90.oligostat.xls 文件")
+            return False
+        
+        print(f"找到 {len(ngs_files)} 个测序结果文件")
+        
+        # 生成配置文本文件
+        config_txt_path = os.path.join(self.output_dir, "analysis_config.txt")
+        
+        with open(config_txt_path, 'w', encoding='utf-8') as f:
+            f.write("# NGS Oligopool测序分析配置文件\n")
+            f.write("# 格式: NGS测序文件的绝对路径 [Tab] 芯片打印序列文件的绝对路径 [Tab] 芯片类型(small或large)\n")
+            f.write("# 请在每行的NGS文件路径后添加Tab键和对应的芯片打印序列文件路径，再添加Tab键和芯片类型\n")
+            f.write("# 芯片类型: small(540x635)或large(1080x636)\n")
+            f.write("# 保存文件后，程序将自动开始分析\n\n")
+            
+            for ngs_file in ngs_files:
+                # 默认值: [NGS文件路径] [Tab] [留空供用户填写] [Tab] small
+                f.write(f"{os.path.abspath(ngs_file)}\t\tsmall\n")
+        
+        print(f"配置文件已创建: {config_txt_path}")
+        
+        # 尝试打开文本文件供用户编辑
+        try:
+            if sys.platform == "win32":
+                os.startfile(config_txt_path)
+            elif sys.platform == "darwin":  # macOS
+                subprocess.run(["open", config_txt_path])
+            else:  # Linux
+                subprocess.run(["xdg-open", config_txt_path])
+            
+            print("\n请在打开的文本文件中：")
+            print("1. 在每行的NGS文件路径后添加Tab键和对应的芯片打印序列文件绝对路径")
+            print("2. 根据需要修改芯片类型(small或large)")
+            print("3. 保存文件")
+            print("\n配置完成后，请运行以下命令开始分析:")
+            print(f"python {os.path.basename(__file__)} --config {config_txt_path}")
             
             return True
-        else:
-            print("未能创建分析界面")
-            return False
+            
+        except Exception as e:
+            print(f"无法自动打开配置文件: {e}")
+            print(f"请手动打开并编辑配置文件: {config_txt_path}")
+            return True
     
     def load_config(self, config_file):
-        """从配置文件加载分析设置"""
+        """从配置文本文件加载分析设置"""
         if not os.path.exists(config_file):
             print(f"错误: 配置文件不存在 - {config_file}")
             return False
         
+        # 判断是JSON还是TXT格式
+        config_ext = os.path.splitext(config_file)[1].lower()
+        
         try:
-            with open(config_file, 'r', encoding='utf-8') as f:
-                self.config_data = json.load(f)
-            
-            # 验证基本配置
-            if not self.config_data.get('input_dir'):
-                print("错误: 配置文件中缺少input_dir字段")
-                return False
-            
-            if not self.config_data.get('files'):
-                print("错误: 配置文件中缺少files字段或文件列表为空")
-                return False
-            
-            # 设置目录
-            self.input_dir = self.config_data.get('input_dir')
-            self.output_dir = self.config_data.get('output_dir', os.path.join(self.input_dir, "results"))
+            if config_ext == ".json":
+                # 处理JSON格式配置文件
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    self.config_data = json.load(f)
+                
+                # 验证基本配置
+                if not self.config_data.get('input_dir'):
+                    print("错误: 配置文件中缺少input_dir字段")
+                    return False
+                
+                if not self.config_data.get('files'):
+                    print("错误: 配置文件中缺少files字段或文件列表为空")
+                    return False
+                
+                # 设置目录
+                self.input_dir = self.config_data.get('input_dir')
+                self.output_dir = self.config_data.get('output_dir', os.path.join(self.input_dir, "results"))
+                
+                # 准备文件配置列表
+                analysis_files = self.config_data['files']
+                
+            else:
+                # 处理TXT格式配置文件
+                analysis_files = []
+                
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        # 跳过注释行和空行
+                        if not line or line.startswith("#"):
+                            continue
+                        
+                        # 按Tab分割行
+                        parts = line.split('\t')
+                        
+                        # 确保至少有NGS文件路径
+                        if len(parts) >= 1:
+                            ngs_file = parts[0].strip()
+                            chip_file = parts[1].strip() if len(parts) > 1 else ""
+                            chip_type = parts[2].strip() if len(parts) > 2 else "small"
+                            
+                            analysis_files.append({
+                                'ngs_file': ngs_file,
+                                'chip_file': chip_file,
+                                'chip_type': chip_type
+                            })
+                
+                # 获取输入输出目录
+                if analysis_files:
+                    # 使用第一个NGS文件的目录作为输入目录
+                    self.input_dir = os.path.dirname(analysis_files[0]['ngs_file'])
+                    self.output_dir = os.path.join(self.input_dir, "results")
+                    os.makedirs(self.output_dir, exist_ok=True)
+                
+                # 创建配置数据结构
+                self.config_data = {
+                    'input_dir': self.input_dir,
+                    'output_dir': self.output_dir,
+                    'files': analysis_files
+                }
             
             # 验证每个文件配置
-            for i, file_info in enumerate(self.config_data['files']):
+            for i, file_info in enumerate(analysis_files):
                 if not file_info.get('ngs_file'):
                     print(f"警告: 文件 #{i+1} 缺少ngs_file字段")
                 elif not os.path.exists(file_info['ngs_file']):
@@ -474,7 +183,7 @@ class NGSOligoAnalysisWorkflow:
                 if file_info.get('chip_file') and not os.path.exists(file_info['chip_file']):
                     print(f"警告: 芯片合成文件不存在 - {file_info['chip_file']}")
             
-            print(f"成功加载配置，包含 {len(self.config_data['files'])} 个文件的分析任务")
+            print(f"成功加载配置，包含 {len(analysis_files)} 个文件的分析任务")
             return True
         
         except Exception as e:
@@ -713,7 +422,7 @@ def main():
     subparsers = parser.add_subparsers(dest='command', help='命令')
     
     # 扫描命令
-    scan_parser = subparsers.add_parser('scan', help='扫描目录并创建分析界面')
+    scan_parser = subparsers.add_parser('scan', help='扫描目录并创建配置文件')
     scan_parser.add_argument('input_dir', nargs='?', help='输入目录路径，包含测序结果文件')
     scan_parser.add_argument('--output_dir', '-o', help='输出目录路径 (默认为input_dir/results)')
     
