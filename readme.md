@@ -61,13 +61,36 @@
   - 位置偏好性分析图
   - 区域统计数据CSV文件
 
-### 3. 批量分析工作流 (`ngs_oligo_analysis_workflow.py`)
+### 3. 芯片Indel热力图分析 (`chip_indel_heatmap.py`)
+
+**分析内容：**
+- **Indel分类分析**：
+  - Small Indel (<3bp del)：小于3bp缺失的平均indel率
+  - Large Indel (≥3bp del)：大于等于3bp缺失的平均indel率
+
+- **热力图类型**：
+  - **小缺失热力图**：显示<3bp缺失的分布（YlOrRd色彩）
+  - **大缺失热力图**：显示≥3bp缺失的分布（Reds色彩）
+  - **并排对比热力图**：两种indel类型的直观对比
+  - **高indel区域热力图**：突出显示超过均值+2σ的异常区域
+
+- **位置偏好性分析**：
+  - X轴、Y轴位置与indel率的相关性分析
+  - 不同区域（上下左右、中心）的indel统计
+
+- **输出结果**：
+  - 小缺失/大缺失矩阵CSV文件
+  - 多类型indel热力图PNG文件
+  - 位置偏好性分析图
+  - 区域统计数据CSV文件
+
+### 4. 批量分析工作流 (`ngs_oligo_analysis_workflow.py`)
 
 **功能特点：**
 - **智能文件扫描**：自动扫描目录中的所有`*90.oligostat.xls`文件
 - **配置文件生成**：自动生成配置文件供用户编辑
 - **批量处理**：支持多个文件的批量分析
-- **一站式分析**：集成深度分析和芯片位置分析
+- **三重分析**：集成深度分析、芯片位置分析和芯片indel分析
 - **汇总报告**：生成包含所有分析结果的HTML汇总报告
 
 ## 使用方法
@@ -102,6 +125,9 @@ python analyze_oligo_ngs.py input_file.xls [output_directory]
 
 # 仅芯片位置分析
 python chip_depth_heatmap.py chip_synthesis_file.txt ngs_file.xls --chip_type small
+
+# 仅芯片indel分析
+python chip_indel_heatmap.py chip_synthesis_file.txt ngs_file.xls --chip_type small
 ```
 
 ## 配置文件格式
@@ -133,6 +159,15 @@ results/
 │   ├── file1_name_depth_heatmap_standard.png
 │   ├── file1_name_depth_heatmap_low_emph.png
 │   └── file1_name_region_statistics.csv   # 区域统计数据
+├── file1_name_chip_indel_analysis/        # 芯片indel分析结果
+│   ├── chip_small_indel_matrix.csv        # 小缺失矩阵
+│   ├── chip_large_indel_matrix.csv        # 大缺失矩阵
+│   ├── file1_name_small_indel_heatmap.png # 小缺失热力图
+│   ├── file1_name_large_indel_heatmap.png # 大缺失热力图
+│   ├── file1_name_combined_indel_heatmap.png # 对比热力图
+│   ├── file1_name_high_indel_regions.png  # 高indel区域图
+│   ├── file1_name_indel_position_analysis.png # 位置分析图
+│   └── file1_name_*_indel_region_statistics.csv # 区域统计
 └── analysis_config.txt                    # 分析配置文件
 ```
 
@@ -162,9 +197,14 @@ pip install pandas numpy matplotlib seaborn tqdm
 
 ## 注意事项
 
-1. 确保输入文件包含`Oligo seq`和`Depth`列
-2. 芯片合成文件为可选，如无此文件将跳过芯片位置分析
+1. 确保输入文件包含必需列：
+   - `Oligo seq`：DNA序列
+   - `Depth`：测序深度
+   - `Mean indel(<3bp del)`：小缺失indel率（用于indel分析）
+   - `Mean indel`：总indel率（用于indel分析）
+2. 芯片合成文件为可选，如无此文件将跳过芯片位置和indel分析
 3. 支持Excel (.xls, .xlsx)、CSV和TSV格式的输入文件
 4. 建议使用一站式分析模式以获得完整的分析结果
 5. 生成的HTML报告可直接在浏览器中查看
+6. Indel分析会自动计算大缺失率（Mean indel - Mean indel(<3bp del)）
 

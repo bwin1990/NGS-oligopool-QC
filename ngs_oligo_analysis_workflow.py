@@ -21,8 +21,9 @@ import uuid
 try:
     import analyze_oligo_ngs
     import chip_depth_heatmap
+    import chip_indel_heatmap
 except ImportError:
-    print("警告: 无法导入分析模块。请确保 analyze_oligo_ngs.py 和 chip_depth_heatmap.py 文件在当前目录中。")
+    print("警告: 无法导入分析模块。请确保 analyze_oligo_ngs.py、chip_depth_heatmap.py 和 chip_indel_heatmap.py 文件在当前目录中。")
     print("程序将继续运行，但某些功能可能不可用。")
 
 class NGSOligoAnalysisWorkflow:
@@ -316,6 +317,32 @@ class NGSOligoAnalysisWorkflow:
                             break
                     else:
                         print(f"  芯片位置分析失败: {process.stderr}")
+                    
+                    # 步骤3: 芯片indel分析 (如果有芯片文件)
+                    print("  步骤3: 执行芯片indel分析...")
+                    # 创建芯片indel分析输出目录
+                    indel_result_dir = os.path.join(self.output_dir, f"{os.path.splitext(os.path.basename(ngs_file))[0]}_chip_indel_analysis")
+                    if not os.path.exists(indel_result_dir):
+                        os.makedirs(indel_result_dir)
+                    
+                    # 调用芯片indel分析
+                    cmd = [
+                        sys.executable,
+                        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chip_indel_heatmap.py'),
+                        chip_file,
+                        ngs_file,
+                        '--output_dir', indel_result_dir,
+                        '--chip_type', chip_type
+                    ]
+                    print(f"  执行命令: {' '.join(cmd)}")
+                    process = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    if process.returncode == 0:
+                        print("  芯片indel分析完成")
+                        result_info['indel_dir'] = indel_result_dir
+                        result_info['indel_img_dir'] = indel_result_dir
+                    else:
+                        print(f"  芯片indel分析失败: {process.stderr}")
                 
                 # 添加到结果列表
                 self.analysis_results.append(result_info)
@@ -373,7 +400,7 @@ class NGSOligoAnalysisWorkflow:
 
         <section id="results-summary">
             <h2>分析结果汇总</h2>
-            <p>共分析了 {len(self.analysis_results)} 个测序结果文件。以下是详细结果：</p>
+            <p>共分析了 {len(self.analysis_results)} 个测序结果文件，包含深度分布分析、芯片位置热力图分析和芯片indel热力图分析。以下是详细结果：</p>
         """
         
         # 添加每个分析结果
@@ -419,6 +446,19 @@ class NGSOligoAnalysisWorkflow:
                 # 添加芯片位置图像
                 img_files = glob.glob(os.path.join(result['chip_img_dir'], '*heatmap*.png'))
                 for img_file in img_files[:4]:  # 限制显示前4张图片
+                    rel_path = os.path.relpath(img_file, self.output_dir)
+                    img_name = os.path.basename(img_file)
+                    html_content += f'<a href="{rel_path}" target="_blank"><img src="{rel_path}" alt="{img_name}" title="{img_name}" class="img-thumbnail"></a>\n'
+                
+                html_content += '</div>\n'
+            
+            # 添加芯片indel分析图像
+            if result.get('indel_img_dir') and os.path.exists(result['indel_img_dir']):
+                html_content += '<h4 class="mt-3">芯片Indel分析图像:</h4>\n<div class="img-gallery">\n'
+                
+                # 添加芯片indel图像
+                img_files = glob.glob(os.path.join(result['indel_img_dir'], '*indel*.png'))
+                for img_file in img_files[:6]:  # 限制显示前6张图片
                     rel_path = os.path.relpath(img_file, self.output_dir)
                     img_name = os.path.basename(img_file)
                     html_content += f'<a href="{rel_path}" target="_blank"><img src="{rel_path}" alt="{img_name}" title="{img_name}" class="img-thumbnail"></a>\n'
