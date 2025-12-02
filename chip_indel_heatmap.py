@@ -190,9 +190,11 @@ def generate_indel_heatmaps(small_indel_matrix, large_indel_matrix, ngs_file, ou
     print(f"Small indel (<3bp del) statistics:")
     print(f"  Mean: {small_mean:.6f}")
     print(f"  Std: {small_std:.6f}")
+    print(f"  High threshold (1.5x Mean): {1.5 * small_mean:.6f}")
     print(f"Large indel (>=3bp del) statistics:")
     print(f"  Mean: {large_mean:.6f}")
     print(f"  Std: {large_std:.6f}")
+    print(f"  High threshold (1.5x Mean): {1.5 * large_mean:.6f}")
     
     # 1. Small indel heatmap (<3bp del)
     plt.figure(figsize=(14, 12))
@@ -294,53 +296,201 @@ def generate_indel_heatmaps(small_indel_matrix, large_indel_matrix, ngs_file, ou
     plt.close()
     print(f"Combined indel heatmap saved to: {combined_heatmap_path}")
     
-    # 4. High indel regions analysis
-    # Define high indel thresholds (mean + 2*std)
-    small_high_threshold = small_mean + 2 * small_std
-    large_high_threshold = large_mean + 2 * large_std
+    # 4. High indel regions analysis with emphasis (similar to depth low coverage emphasis)
+    # Define high indel thresholds (1.5x mean)
+    small_high_threshold = 1.5 * small_mean
+    large_high_threshold = 1.5 * large_mean
     
-    # Create binary masks for high indel regions
-    small_high_mask = np.logical_or(small_mask, small_indel_matrix < small_high_threshold)
-    large_high_mask = np.logical_or(large_mask, large_indel_matrix < large_high_threshold)
-    
-    # Generate high indel regions heatmap
+    # Generate high indel regions emphasis heatmap
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(28, 12))
     
-    # High small indel regions
-    sns.heatmap(small_indel_matrix, mask=small_high_mask, cmap='Oranges', 
-                vmin=small_high_threshold, 
-                cbar_kws={'label': f'High Small Indel (>{small_high_threshold:.6f})'}, 
+    # Small indel emphasis plot
+    # Use a diverging colormap with limited range for better contrast
+    small_vmax = small_high_threshold * 2  # Limit color range to 2x threshold
+    small_vmin = 0
+    small_norm = Normalize(vmin=small_vmin, vmax=small_vmax)
+    
+    # Plot with diverging colormap for emphasis
+    sns.heatmap(small_indel_matrix, mask=small_mask, cmap='RdYlBu_r', 
+                norm=small_norm, cbar_kws={'label': 'Small Indel Rate'}, 
                 linewidths=0, square=True, xticklabels=False, yticklabels=False, ax=ax1)
     
-    ax1.set_title(f'High Small Indel Regions (>Mean+2σ)', fontsize=14)
+    # Create binary mask for high indel areas
+    small_high_binary = np.zeros_like(small_indel_matrix)
+    small_high_binary[~small_mask & (small_indel_matrix >= small_high_threshold)] = 1
+    
+    # Add contours to highlight high indel regions
+    if np.any(small_high_binary):
+        try:
+            height, width = small_indel_matrix.shape
+            cs1 = ax1.contour(small_high_binary, levels=[0.5], colors=['black'], linewidths=2.0, 
+                            extent=(-0.5, width-0.5, -0.5, height-0.5))
+            ax1.clabel(cs1, inline=1, fontsize=10, fmt='High Small Indel')
+        except:
+            print("Unable to generate contours for high small indel regions")
+    
+    ax1.set_title(f'Small Indel Distribution with Emphasis on High Regions (>1.5x Mean)', fontsize=14)
     ax1.set_xlabel('X Coordinate', fontsize=12)
     ax1.set_ylabel('Y Coordinate', fontsize=12)
     
+    # Add threshold annotation
+    ax1.annotate(f'High threshold: {small_high_threshold:.6f} (1.5x mean)', 
+                xy=(0.05, 0.95), xycoords='axes fraction',
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8),
+                verticalalignment='top')
+    
     # Add border
+    height, width = small_indel_matrix.shape
     rect1 = Rectangle((0, 0), width, height, linewidth=2, edgecolor='black', facecolor='none')
     ax1.add_patch(rect1)
     
-    # High large indel regions
-    sns.heatmap(large_indel_matrix, mask=large_high_mask, cmap='Reds', 
-                vmin=large_high_threshold,
-                cbar_kws={'label': f'High Large Indel (>{large_high_threshold:.6f})'}, 
+    # Large indel emphasis plot
+    # Use a diverging colormap with limited range for better contrast
+    large_vmax = large_high_threshold * 2  # Limit color range to 2x threshold
+    large_vmin = 0
+    large_norm = Normalize(vmin=large_vmin, vmax=large_vmax)
+    
+    # Plot with diverging colormap for emphasis
+    sns.heatmap(large_indel_matrix, mask=large_mask, cmap='RdYlBu_r', 
+                norm=large_norm, cbar_kws={'label': 'Large Indel Rate'}, 
                 linewidths=0, square=True, xticklabels=False, yticklabels=False, ax=ax2)
     
-    ax2.set_title(f'High Large Indel Regions (>Mean+2σ)', fontsize=14)
+    # Create binary mask for high indel areas
+    large_high_binary = np.zeros_like(large_indel_matrix)
+    large_high_binary[~large_mask & (large_indel_matrix >= large_high_threshold)] = 1
+    
+    # Add contours to highlight high indel regions
+    if np.any(large_high_binary):
+        try:
+            cs2 = ax2.contour(large_high_binary, levels=[0.5], colors=['black'], linewidths=2.0, 
+                            extent=(-0.5, width-0.5, -0.5, height-0.5))
+            ax2.clabel(cs2, inline=1, fontsize=10, fmt='High Large Indel')
+        except:
+            print("Unable to generate contours for high large indel regions")
+    
+    ax2.set_title(f'Large Indel Distribution with Emphasis on High Regions (>1.5x Mean)', fontsize=14)
     ax2.set_xlabel('X Coordinate', fontsize=12)
     ax2.set_ylabel('Y Coordinate', fontsize=12)
+    
+    # Add threshold annotation
+    ax2.annotate(f'High threshold: {large_high_threshold:.6f} (1.5x mean)', 
+                xy=(0.05, 0.95), xycoords='axes fraction',
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8),
+                verticalalignment='top')
     
     # Add border
     rect2 = Rectangle((0, 0), width, height, linewidth=2, edgecolor='black', facecolor='none')
     ax2.add_patch(rect2)
     
+    # Create binary masks for calculating statistics (redefine for later use)
+    small_high_mask = np.logical_or(small_mask, small_indel_matrix < small_high_threshold)
+    large_high_mask = np.logical_or(large_mask, large_indel_matrix < large_high_threshold)
+    
+    # Calculate and print statistics for high indel regions
+    small_high_count = np.sum(~small_high_mask)
+    large_high_count = np.sum(~large_high_mask)
+    total_valid_small = np.sum(~small_mask)
+    total_valid_large = np.sum(~large_mask)
+    
+    small_high_percentage = (small_high_count / total_valid_small) * 100 if total_valid_small > 0 else 0
+    large_high_percentage = (large_high_count / total_valid_large) * 100 if total_valid_large > 0 else 0
+    
+    print(f"High indel regions analysis:")
+    print(f"  Small indel regions >1.5x mean: {small_high_count} ({small_high_percentage:.2f}% of chip)")
+    print(f"  Large indel regions >1.5x mean: {large_high_count} ({large_high_percentage:.2f}% of chip)")
+    
+    # Add annotations to the subplots
+    ax1.annotate(f'High regions: {small_high_percentage:.2f}% of chip', 
+                xy=(0.05, 0.05), xycoords='axes fraction',
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8))
+    
+    ax2.annotate(f'High regions: {large_high_percentage:.2f}% of chip', 
+                xy=(0.05, 0.05), xycoords='axes fraction',
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8))
+    
     plt.tight_layout()
     
-    # Save high indel regions heatmap
-    high_indel_path = os.path.join(output_dir, f'{file_name}_high_indel_regions.png')
-    plt.savefig(high_indel_path, dpi=300, bbox_inches='tight')
+    # Save high indel regions emphasis heatmap
+    high_indel_emphasis_path = os.path.join(output_dir, f'{file_name}_high_indel_emphasis.png')
+    plt.savefig(high_indel_emphasis_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"High indel regions heatmap saved to: {high_indel_path}")
+    print(f"High indel regions emphasis heatmap saved to: {high_indel_emphasis_path}")
+    
+    # 5. Focused high indel regions heatmap (showing only high indel areas)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(28, 12))
+    
+    # Focused small indel regions
+    # Create mask for non-high indel regions
+    small_focused_mask = np.logical_or(small_mask, small_indel_matrix < small_high_threshold)
+    
+    # Plot only high indel areas with strong color
+    sns.heatmap(small_indel_matrix, mask=small_focused_mask, cmap='Oranges',
+                vmin=small_high_threshold, vmax=small_indel_matrix.max() if not np.all(small_focused_mask) else small_high_threshold*2,
+                cbar_kws={'label': f'High Small Indel (>{small_high_threshold:.6f})'}, 
+                linewidths=0, square=True, xticklabels=False, yticklabels=False, ax=ax1)
+    
+    ax1.set_title('Focused High Small Indel Regions (>1.5x Mean)', fontsize=14)
+    ax1.set_xlabel('X Coordinate', fontsize=12)
+    ax1.set_ylabel('Y Coordinate', fontsize=12)
+    
+    # Add grid lines
+    grid_spacing = max(width, height) // 10
+    for x in range(0, width, grid_spacing):
+        ax1.axvline(x, color='grey', linestyle='-', linewidth=0.5, alpha=0.3)
+    for y in range(0, height, grid_spacing):
+        ax1.axhline(y, color='grey', linestyle='-', linewidth=0.5, alpha=0.3)
+    
+    # Add border
+    rect1 = Rectangle((0, 0), width, height, linewidth=2, edgecolor='black', facecolor='none')
+    ax1.add_patch(rect1)
+    
+    # Calculate percentage
+    small_focused_count = np.sum(~small_focused_mask)
+    small_focused_percentage = (small_focused_count / np.sum(~small_mask)) * 100 if np.sum(~small_mask) > 0 else 0
+    
+    ax1.annotate(f'High regions: {small_focused_percentage:.2f}% of chip', 
+                xy=(0.05, 0.05), xycoords='axes fraction',
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8))
+    
+    # Focused large indel regions
+    # Create mask for non-high indel regions
+    large_focused_mask = np.logical_or(large_mask, large_indel_matrix < large_high_threshold)
+    
+    # Plot only high indel areas with strong color
+    sns.heatmap(large_indel_matrix, mask=large_focused_mask, cmap='Reds',
+                vmin=large_high_threshold, vmax=large_indel_matrix.max() if not np.all(large_focused_mask) else large_high_threshold*2,
+                cbar_kws={'label': f'High Large Indel (>{large_high_threshold:.6f})'}, 
+                linewidths=0, square=True, xticklabels=False, yticklabels=False, ax=ax2)
+    
+    ax2.set_title('Focused High Large Indel Regions (>1.5x Mean)', fontsize=14)
+    ax2.set_xlabel('X Coordinate', fontsize=12)
+    ax2.set_ylabel('Y Coordinate', fontsize=12)
+    
+    # Add grid lines
+    for x in range(0, width, grid_spacing):
+        ax2.axvline(x, color='grey', linestyle='-', linewidth=0.5, alpha=0.3)
+    for y in range(0, height, grid_spacing):
+        ax2.axhline(y, color='grey', linestyle='-', linewidth=0.5, alpha=0.3)
+    
+    # Add border
+    rect2 = Rectangle((0, 0), width, height, linewidth=2, edgecolor='black', facecolor='none')
+    ax2.add_patch(rect2)
+    
+    # Calculate percentage
+    large_focused_count = np.sum(~large_focused_mask)
+    large_focused_percentage = (large_focused_count / np.sum(~large_mask)) * 100 if np.sum(~large_mask) > 0 else 0
+    
+    ax2.annotate(f'High regions: {large_focused_percentage:.2f}% of chip', 
+                xy=(0.05, 0.05), xycoords='axes fraction',
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8))
+    
+    plt.tight_layout()
+    
+    # Save focused high indel regions heatmap
+    focused_high_indel_path = os.path.join(output_dir, f'{file_name}_focused_high_indel_regions.png')
+    plt.savefig(focused_high_indel_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Focused high indel regions heatmap saved to: {focused_high_indel_path}")
 
 def analyze_indel_position_bias(small_indel_matrix, large_indel_matrix, ngs_file, output_dir):
     """

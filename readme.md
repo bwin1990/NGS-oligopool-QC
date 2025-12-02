@@ -72,7 +72,8 @@
   - **小缺失热力图**：显示<3bp缺失的分布（YlOrRd色彩）
   - **大缺失热力图**：显示≥3bp缺失的分布（Reds色彩）
   - **并排对比热力图**：两种indel类型的直观对比
-  - **高indel区域热力图**：突出显示超过均值+2σ的异常区域
+  - **高indel区域强调图**：使用对比色和轮廓线突出显示>1.5x均值的区域
+  - **聚焦高indel区域图**：仅显示高indel区域，类似深度分析中的低覆盖度聚焦图
 
 - **位置偏好性分析**：
   - X轴、Y轴位置与indel率的相关性分析
@@ -80,7 +81,8 @@
 
 - **输出结果**：
   - 小缺失/大缺失矩阵CSV文件
-  - 多类型indel热力图PNG文件
+  - 多类型indel热力图PNG文件（包含强调图和聚焦图）
+  - 高indel区域轮廓线标注（类似深度分析的低覆盖度强调）
   - 位置偏好性分析图
   - 区域统计数据CSV文件
 
@@ -165,7 +167,8 @@ results/
 │   ├── file1_name_small_indel_heatmap.png # 小缺失热力图
 │   ├── file1_name_large_indel_heatmap.png # 大缺失热力图
 │   ├── file1_name_combined_indel_heatmap.png # 对比热力图
-│   ├── file1_name_high_indel_regions.png  # 高indel区域图
+│   ├── file1_name_high_indel_emphasis.png # 高indel区域强调图
+│   ├── file1_name_focused_high_indel_regions.png # 聚焦高indel区域图
 │   ├── file1_name_indel_position_analysis.png # 位置分析图
 │   └── file1_name_*_indel_region_statistics.csv # 区域统计
 └── analysis_config.txt                    # 分析配置文件
