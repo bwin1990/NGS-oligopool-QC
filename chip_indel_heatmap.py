@@ -106,6 +106,13 @@ def map_indel_to_chip(ngs_file, seq_to_pos, output_dir):
         print(f"Error: Required columns not found: {', '.join(missing_columns)}")
         print(f"Available columns: {', '.join(df.columns)}")
         return None, None, 0
+
+    # Convert indel columns to numeric to avoid string subtraction errors
+    numeric_cols = ['Mean indel(<3bp del)', 'Mean indel']
+    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+    coerced_rows = df[numeric_cols].isna().any(axis=1).sum()
+    if coerced_rows:
+        print(f"Warning: {coerced_rows} rows have missing/invalid indel values and will be skipped where necessary")
     
     # Get chip dimensions
     max_x = max([pos[0] for pos in seq_to_pos.values()]) + 1
@@ -118,14 +125,24 @@ def map_indel_to_chip(ngs_file, seq_to_pos, output_dir):
     # Map indel data to chip position
     mapped_count = 0
     not_found = 0
+    skipped_missing = 0
     
     for _, row in tqdm(df.iterrows(), total=len(df), desc="Mapping indel data"):
         oligo_seq = row['Oligo seq']
+
+        # Handle missing values gracefully
         small_indel = row['Mean indel(<3bp del)']
         mean_indel = row['Mean indel']
+        if pd.isna(mean_indel) and pd.isna(small_indel):
+            skipped_missing += 1
+            continue
+        if pd.isna(mean_indel):
+            mean_indel = small_indel  # assume total indel equals small indel when total is missing
+        if pd.isna(small_indel):
+            small_indel = 0.0  # treat missing small indel as zero to avoid blocking mapping
         
-        # Calculate large indel (>=3bp del)
-        large_indel = mean_indel - small_indel
+        # Calculate large indel (>=3bp del), guard against negative values
+        large_indel = max(float(mean_indel) - float(small_indel), 0.0)
         
         if oligo_seq in seq_to_pos:
             x, y = seq_to_pos[oligo_seq]
@@ -140,6 +157,8 @@ def map_indel_to_chip(ngs_file, seq_to_pos, output_dir):
     print(f"Total sequences: {len(df)}")
     print(f"Successfully mapped: {mapped_count} ({mapping_rate:.2f}%)")
     print(f"Mapping not found: {not_found}")
+    if skipped_missing:
+        print(f"Skipped due to missing indel data: {skipped_missing}")
     
     # Save chip indel matrices to CSV
     small_indel_df = pd.DataFrame(small_indel_matrix)
